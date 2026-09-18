@@ -25,7 +25,3 @@ export function visibleTags(tasks: Task[]): string[] {
   tasks.forEach((t) => t.tags.forEach((tag) => set.add(tag)));
   return [...set].sort();
 }
-
-export function isOverdue(task: Task): boolean {
-  return !!task.dueDate && task.status !== "DONE" && new Date(task.dueDate) < new Date();
-}

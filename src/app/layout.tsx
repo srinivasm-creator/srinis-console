@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Sora, Inter, JetBrains_Mono } from "next/font/google";
 import Sidebar from "@/components/layout/Sidebar";
+import { ToastProvider } from "@/components/ui/Toast";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import "./globals.css";
 
 const sora = Sora({
@@ -31,12 +33,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sora.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="h-full">
-        <div className="flex h-screen">
-          <Sidebar />
-          <main className="min-w-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-6xl px-9 py-7 pb-16">{children}</div>
-          </main>
-        </div>
+        <ToastProvider>
+          <ConfirmProvider>
+            <div className="flex h-screen">
+              <Sidebar />
+              <main className="min-w-0 flex-1 overflow-y-auto">
+                <div className="mx-auto max-w-6xl px-9 py-7 pb-16">{children}</div>
+              </main>
+            </div>
+          </ConfirmProvider>
+        </ToastProvider>
       </body>
     </html>
   );

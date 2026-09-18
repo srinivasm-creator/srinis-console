@@ -34,7 +34,7 @@ export default function TasksView() {
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [quickAdd, setQuickAdd] = useState("");
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [modalTask, setModalTask] = useState<Task | null | "new">(null);
 
   useEffect(() => {
     localStorage.setItem(UI_KEY, JSON.stringify({ statusFilter, showDoneInAll, viewMode, groupBy }));
@@ -71,26 +71,6 @@ export default function TasksView() {
       body: JSON.stringify({ title: quickAdd.trim() }),
     });
     setQuickAdd("");
-    reload();
-  }
-
-  async function handleNewTask() {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Untitled task" }),
-    });
-    const task = await res.json();
-    await reload();
-    setSelectedTask(task);
-  }
-
-  async function handleStatusChange(taskId: string, status: TaskStatus) {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
     reload();
   }
 
@@ -183,7 +163,7 @@ export default function TasksView() {
             <Download size={13} /> Export CSV
           </a>
           <button
-            onClick={handleNewTask}
+            onClick={() => setModalTask("new")}
             className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[12.5px] font-medium text-bg hover:brightness-110"
           >
             <Plus size={14} /> New task
@@ -193,25 +173,18 @@ export default function TasksView() {
 
       <div className="pt-4">
         {viewMode === "list" ? (
-          <TaskTable tasks={finalTasks} groupBy={groupBy} onOpen={setSelectedTask} />
+          <TaskTable tasks={finalTasks} groupBy={groupBy} onOpen={setModalTask} onChanged={reload} />
         ) : (
-          <TaskBoard tasks={finalTasks} onOpen={setSelectedTask} onStatusChange={handleStatusChange} />
+          <TaskBoard tasks={finalTasks} onOpen={setModalTask} onChanged={reload} />
         )}
       </div>
 
-      {selectedTask && (
+      {modalTask !== null && (
         <TaskModal
-          task={selectedTask}
+          task={modalTask === "new" ? null : modalTask}
           categories={categories}
-          onClose={() => {
-            setSelectedTask(null);
-            reload();
-          }}
-          onSaved={setSelectedTask}
-          onDeleted={() => {
-            setSelectedTask(null);
-            reload();
-          }}
+          onClose={() => setModalTask(null)}
+          onSaved={reload}
           onCategoriesChanged={reload}
         />
       )}

@@ -1,268 +1,362 @@
 "use client";
 
-import { useState } from "react";
-import { X, Trash2 } from "lucide-react";
-import type { Category, Task, TaskStatus, Priority } from "@/types";
+import { useEffect, useState } from "react";
+import { X, Trash2, Plus } from "lucide-react";
+import type { Category, Priority, Task, TaskStatus } from "@/types";
 import { STATUS_LABEL, PRIORITY_LABEL } from "@/types";
+import { useDebouncedAutosave } from "@/hooks/useDebouncedCallback";
+import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { TagChipInput } from "@/components/ui/TagChipInput";
+import { formatDateTime } from "@/lib/dates";
 
-const STATUS_OPTIONS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
-const PRIORITY_OPTIONS: Priority[] = ["LOW", "MEDIUM", "HIGH"];
+const STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
+const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH"];
 
-const fieldClass =
-  "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent";
-
-export function TaskModal({
-  task,
-  categories,
-  onClose,
-  onSaved,
-  onDeleted,
-  onCategoriesChanged,
-}: {
-  task: Task;
+interface Props {
+  task: Task | null; // null = creating a new task
   categories: Category[];
   onClose: () => void;
-  onSaved: (task: Task) => void;
-  onDeleted: () => void;
+  onSaved: () => void;
   onCategoriesChanged: () => void;
-}) {
-  const [title, setTitle] = useState(task.title);
-  const [description, setDescription] = useState(task.description ?? "");
-  const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>(task.tags);
-  const [commentText, setCommentText] = useState("");
-  const [newCategoryMode, setNewCategoryMode] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
+}
 
-  async function patch(data: Record<string, unknown>) {
-    const res = await fetch(`/api/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const updated = await res.json();
-    onSaved(updated);
-    return updated;
+async function patchTask(id: string, data: Record<string, unknown>): Promise<Task> {
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Save failed");
+  return res.json();
+}
+
+export function TaskModal({ task, categories, onClose, onSaved, onCategoriesChanged }: Props) {
+  const isEditing = !!task;
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  const [title, setTitle] = useState(task?.title || "");
+  const [description, setDescription] = useState(task?.description || "");
+  const [dueDate, setDueDate] = useState(task?.dueDate ? task.dueDate.slice(0, 10) : "");
+  const [status, setStatus] = useState<TaskStatus>(task?.status || "TODO");
+  const [priority, setPriority] = useState<Priority>(task?.priority || "MEDIUM");
+  const [categoryId, setCategoryId] = useState(task?.categoryId || "");
+  const [tags, setTags] = useState<string[]>(task?.tags || []);
+  const [comment, setComment] = useState("");
+  const [live, setLive] = useState<Task | null>(task);
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved">("");
+
+  const autosave = useDebouncedAutosave(async (payload: Record<string, unknown>) => {
+    if (!live) return;
+    setSaveStatus("saving");
+    try {
+      const updated = await patchTask(live.id, payload);
+      setLive(updated);
+      setSaveStatus("saved");
+      onSaved();
+      setTimeout(() => setSaveStatus((s) => (s === "saved" ? "" : s)), 1500);
+    } catch (err) {
+      setSaveStatus("");
+      toast(err instanceof Error ? err.message : "Save failed", true);
+    }
+  }, 700);
+
+  // A brand new task still needs an explicit Save so we don't create
+  // half-filled tasks as you type.
+  function fieldChanged(patch: Record<string, unknown>) {
+    if (!isEditing) return;
+    autosave(patch);
   }
 
-  function addTag(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter" || !tagInput.trim()) return;
-    const next = [...new Set([...tags, tagInput.trim()])];
-    setTags(next);
-    setTagInput("");
-    patch({ tags: next });
-  }
-
-  function removeTag(tag: string) {
-    const next = tags.filter((t) => t !== tag);
-    setTags(next);
-    patch({ tags: next });
-  }
-
-  async function addComment() {
-    if (!commentText.trim()) return;
-    await fetch(`/api/tasks/${task.id}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: commentText.trim() }),
-    });
-    setCommentText("");
-    const listRes = await fetch("/api/tasks");
-    const all: Task[] = await listRes.json();
-    const fresh = all.find((t) => t.id === task.id);
-    if (fresh) onSaved(fresh);
-  }
-
-  async function createCategory() {
-    if (!newCategoryName.trim()) return;
-    const res = await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newCategoryName.trim() }),
-    });
-    const category = await res.json();
-    setNewCategoryName("");
-    setNewCategoryMode(false);
-    onCategoriesChanged();
-    await patch({ categoryId: category.id });
+  async function handleCreate() {
+    if (!title.trim()) return;
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description,
+          dueDate: dueDate || null,
+          status,
+          priority,
+          categoryId: categoryId || null,
+          tags,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Could not create task");
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not create task", true);
+    }
   }
 
   async function handleDelete() {
-    await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
-    onDeleted();
+    if (!live) return;
+    const ok = await confirm({ title: "Delete this task?", description: "This can't be undone.", confirmLabel: "Delete", danger: true });
+    if (!ok) return;
+    await fetch(`/api/tasks/${live.id}`, { method: "DELETE" });
+    onSaved();
+    onClose();
   }
 
+  async function handleAddComment() {
+    if (!live || !comment.trim()) return;
+    const res = await fetch(`/api/tasks/${live.id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: comment.trim() }),
+    });
+    const created = await res.json();
+    setLive({ ...live, comments: [...live.comments, created] });
+    setComment("");
+    onSaved();
+  }
+
+  async function handleDeleteComment(commentId: string) {
+    if (!live) return;
+    const ok = await confirm({ title: "Delete this comment?", description: "This can't be undone.", confirmLabel: "Delete", danger: true });
+    if (!ok) return;
+    await fetch(`/api/tasks/${live.id}/comments/${commentId}`, { method: "DELETE" });
+    setLive({ ...live, comments: live.comments.filter((c) => c.id !== commentId) });
+    onSaved();
+  }
+
+  async function handleNewCategory() {
+    const catName = window.prompt("New category name:");
+    if (!catName || !catName.trim()) return;
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: catName.trim() }),
+      });
+      const created = await res.json();
+      onCategoriesChanged();
+      setCategoryId(created.id);
+      fieldChanged({ categoryId: created.id });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not create category", true);
+    }
+  }
+
+  // Escape closes, matching every other modal in the app.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-border bg-surface"
-      >
-        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => title.trim() && patch({ title: title.trim() })}
-            className="flex-1 bg-transparent font-display text-lg font-semibold outline-none"
-          />
+    <div className="fixed inset-0 z-90 flex items-start justify-center overflow-y-auto bg-black/55 p-6 pt-[6vh]" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-xl border border-border bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="font-display text-[16px] font-semibold">{isEditing ? "Edit task" : "New task"}</h2>
           <button onClick={onClose} className="text-text-muted hover:text-text">
             <X size={18} />
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onBlur={() => patch({ description })}
-            placeholder="Description..."
-            rows={3}
-            className={fieldClass}
+        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              fieldChanged({ title: e.target.value });
+            }}
+            maxLength={120}
+            placeholder="Task title"
+            className="w-full bg-transparent font-display text-[18px] font-semibold outline-none placeholder:text-text-faint"
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">Status</label>
+          <div className="mt-3">
+            <RichTextEditor
+              contentHtml={description}
+              placeholder="What's this task about..."
+              onChange={(html) => {
+                setDescription(html);
+                fieldChanged({ description: html });
+              }}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 p-3">
+            <PropertyRow label="Status">
               <select
-                value={task.status}
-                onChange={(e) => patch({ status: e.target.value })}
-                className={fieldClass}
+                value={status}
+                onChange={(e) => {
+                  const v = e.target.value as TaskStatus;
+                  setStatus(v);
+                  fieldChanged({ status: v });
+                }}
+                className="w-full bg-transparent text-[13px] outline-none"
               >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
+                {STATUSES.map((s) => (
+                  <option key={s} className="bg-surface" value={s}>
                     {STATUS_LABEL[s]}
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">Priority</label>
+            </PropertyRow>
+            <PropertyRow label="Priority">
               <select
-                value={task.priority}
-                onChange={(e) => patch({ priority: e.target.value })}
-                className={fieldClass}
+                value={priority}
+                onChange={(e) => {
+                  const v = e.target.value as Priority;
+                  setPriority(v);
+                  fieldChanged({ priority: v });
+                }}
+                className="w-full bg-transparent text-[13px] outline-none"
               >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>
+                {PRIORITIES.map((p) => (
+                  <option key={p} className="bg-surface" value={p}>
                     {PRIORITY_LABEL[p]}
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">Due date</label>
+            </PropertyRow>
+            <PropertyRow label="Due date">
               <input
                 type="date"
-                defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
-                onChange={(e) => patch({ dueDate: e.target.value || null })}
-                className={fieldClass}
+                value={dueDate}
+                onChange={(e) => {
+                  setDueDate(e.target.value);
+                  fieldChanged({ dueDate: e.target.value || null });
+                }}
+                className="w-full bg-transparent text-[13px] outline-none"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">Category</label>
-              {newCategoryMode ? (
-                <div className="flex gap-1.5">
-                  <input
-                    autoFocus
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && createCategory()}
-                    placeholder="Category name"
-                    className={fieldClass}
-                  />
-                  <button
-                    onClick={createCategory}
-                    className="rounded-lg bg-accent px-2.5 text-xs font-medium text-bg"
-                  >
-                    Add
-                  </button>
-                </div>
-              ) : (
+            </PropertyRow>
+            <PropertyRow label="Category">
+              <div className="flex items-center gap-1.5">
                 <select
-                  value={task.categoryId ?? ""}
+                  value={categoryId}
                   onChange={(e) => {
-                    if (e.target.value === "__new__") setNewCategoryMode(true);
-                    else patch({ categoryId: e.target.value || null });
+                    setCategoryId(e.target.value);
+                    fieldChanged({ categoryId: e.target.value || null });
                   }}
-                  className={fieldClass}
+                  className="w-full bg-transparent text-[13px] outline-none"
                 >
-                  <option value="">No category</option>
+                  <option value="" className="bg-surface">
+                    No category
+                  </option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id} value={c.id} className="bg-surface">
                       {c.name}
                     </option>
                   ))}
-                  <option value="__new__">+ New category…</option>
                 </select>
-              )}
+                <button onClick={handleNewCategory} className="shrink-0 text-text-faint hover:text-text" title="New category">
+                  <Plus size={14} />
+                </button>
+              </div>
+            </PropertyRow>
+            <div className="col-span-2">
+              <PropertyRow label="Tags">
+                <TagChipInput
+                  tags={tags}
+                  onChange={(next) => {
+                    setTags(next);
+                    fieldChanged({ tags: next });
+                  }}
+                />
+              </PropertyRow>
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-text-muted">Tags</label>
-            <div className="mb-1.5 flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-0.5 text-[11px] text-text-muted"
-                >
-                  {tag}
-                  <button onClick={() => removeTag(tag)} className="hover:text-danger">
-                    <X size={11} />
-                  </button>
-                </span>
-              ))}
-            </div>
-            <input
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={addTag}
-              placeholder="Add a tag, press Enter"
-              className={fieldClass}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-text-muted">
-              Comments <span className="text-text-faint">· {task.comments.length}</span>
-            </label>
-            <div className="mb-2 flex flex-col gap-1.5">
-              {task.comments.map((c) => (
-                <div key={c.id} className="rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
-                  <p>{c.text}</p>
-                  <p className="mt-0.5 text-[11px] text-text-faint">
-                    {new Date(c.createdAt).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-1.5">
-              <input
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addComment()}
-                placeholder="Add a comment, press Enter"
-                className={fieldClass}
-              />
-            </div>
-          </div>
+          {isEditing && live && (
+            <Section label="Comments">
+              <div className="flex flex-col gap-2.5">
+                {live.comments.length === 0 && <p className="text-[12px] text-text-muted">No comments yet.</p>}
+                {live.comments.map((c) => (
+                  <div key={c.id} className="group flex items-start justify-between gap-2 border-l-2 border-accent/60 pl-2.5">
+                    <div>
+                      <p className="text-[12.5px]">{c.text}</p>
+                      <span className="font-mono text-[10.5px] text-text-faint">{formatDateTime(c.createdAt)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteComment(c.id)}
+                      className="shrink-0 text-text-faint opacity-0 hover:text-danger group-hover:opacity-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAddComment();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Add a comment..."
+                  className="flex-1 resize-none rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] outline-none focus:border-accent"
+                />
+                <button onClick={handleAddComment} className="self-end rounded-lg border border-border px-3 py-2 text-[12.5px] text-text-muted hover:text-text">
+                  Add
+                </button>
+              </div>
+            </Section>
+          )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-border px-5 py-3">
-          <button
-            onClick={handleDelete}
-            className="flex items-center gap-1.5 text-[12.5px] text-text-muted hover:text-danger"
-          >
-            <Trash2 size={13} /> Delete task
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-lg bg-accent px-4 py-1.5 text-[12.5px] font-medium text-bg hover:brightness-110"
-          >
-            Done
-          </button>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3.5">
+          {isEditing ? (
+            <button onClick={handleDelete} className="text-[13px] font-medium text-text-muted hover:text-danger">
+              Delete
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-text-muted transition-opacity" style={{ opacity: saveStatus ? 1 : 0 }}>
+              {saveStatus === "saving" ? "Saving..." : "Saved"}
+            </span>
+            {isEditing ? (
+              <button onClick={onClose} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-bg hover:brightness-110">
+                Close
+              </button>
+            ) : (
+              <>
+                <button onClick={onClose} className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-text-muted hover:bg-surface-2">
+                  Cancel
+                </button>
+                <button onClick={handleCreate} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-bg hover:brightness-110">
+                  Save
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-faint">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-4">
+      <span className="mb-1.5 block text-[12.5px] font-medium text-text-muted">{label}</span>
+      {children}
     </div>
   );
 }

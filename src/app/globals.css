@@ -64,3 +64,33 @@ body {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+/* TipTap editor content */
+.tiptap-content {
+  outline: none;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.tiptap-content p { margin: 0 0 0.5em; }
+.tiptap-content p:last-child { margin-bottom: 0; }
+.tiptap-content h1 { font-family: var(--font-display); font-size: 1.3em; font-weight: 600; margin: 0.6em 0 0.3em; }
+.tiptap-content h2 { font-family: var(--font-display); font-size: 1.15em; font-weight: 600; margin: 0.6em 0 0.3em; }
+.tiptap-content h3 { font-family: var(--font-display); font-size: 1.05em; font-weight: 600; margin: 0.6em 0 0.3em; }
+.tiptap-content ul, .tiptap-content ol { margin: 0 0 0.5em; padding-left: 1.4em; }
+.tiptap-content blockquote { border-left: 3px solid var(--color-border); margin: 0 0 0.5em; padding-left: 0.8em; color: var(--color-text-muted); }
+.tiptap-content pre { background: var(--color-surface-2); border-radius: 6px; padding: 0.6em 0.8em; overflow-x: auto; margin: 0 0 0.5em; }
+.tiptap-content code { font-family: var(--font-mono); font-size: 0.9em; }
+.tiptap-content pre code { background: none; padding: 0; }
+.tiptap-content :not(pre) > code { background: var(--color-surface-2); border-radius: 4px; padding: 0.1em 0.35em; }
+.tiptap-content ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.tiptap-content ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.tiptap-content ul[data-type="taskList"] li > label { margin-top: 0.2em; }
+.tiptap-content ul[data-type="taskList"] li > div { flex: 1; }
+.tiptap-content a { color: var(--color-accent); text-decoration: underline; }
+.tiptap-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
