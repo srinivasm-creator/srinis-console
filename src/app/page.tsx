@@ -1,27 +1,11 @@
-import { prisma } from "@/lib/prisma";
-import TaskBoard from "@/components/TaskBoard";
-import type { Task } from "@/types";
+import Topbar from "@/components/layout/Topbar";
+import TasksView from "@/components/tasks/TasksView";
 
-export const dynamic = "force-dynamic";
-
-export default async function Home() {
-  const rows = await prisma.task.findMany({
-    orderBy: [{ completed: "asc" }, { createdAt: "desc" }],
-  });
-
-  const tasks: Task[] = rows.map((t) => ({
-    id: t.id,
-    title: t.title,
-    notes: t.notes,
-    priority: t.priority,
-    completed: t.completed,
-    dueDate: t.dueDate ? t.dueDate.toISOString() : null,
-    createdAt: t.createdAt.toISOString(),
-  }));
-
+export default function Home() {
   return (
-    <main className="flex-1 px-4 py-10 sm:py-16">
-      <TaskBoard initialTasks={tasks} />
-    </main>
+    <>
+      <Topbar title="Tasks" sub="Everything on your plate, one honest list." />
+      <TasksView />
+    </>
   );
 }

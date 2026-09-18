@@ -1,26 +1,66 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-bg: #09090b;
+  --color-surface: #18181b;
+  --color-surface-2: #232327;
+  --color-surface-3: #2c2c31;
+  --color-border: #33333a;
+  --color-text: #f4f4f5;
+  --color-text-muted: #9a9aa2;
+  --color-text-faint: #6b6b74;
+
+  --color-accent: #6366f1;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+
+  --color-neutral: #71717a;
+  --color-neutral-soft: color-mix(in srgb, var(--color-neutral) 14%, transparent);
+  --color-warn: #f59e0b;
+  --color-warn-soft: color-mix(in srgb, var(--color-warn) 14%, transparent);
+  --color-blocked: #f97316;
+  --color-blocked-soft: color-mix(in srgb, var(--color-blocked) 14%, transparent);
+  --color-danger: #ef4444;
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  --color-success: #22c55e;
+  --color-success-soft: color-mix(in srgb, var(--color-success) 14%, transparent);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-sora);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-3) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const tasks = await prisma.task.findMany({
-    orderBy: [{ completed: "asc" }, { createdAt: "desc" }],
+    include: { category: true, comments: { orderBy: { createdAt: "asc" } } },
+    orderBy: [{ createdAt: "desc" }],
   });
   return NextResponse.json(tasks);
 }
@@ -19,10 +20,14 @@ export async function POST(request: NextRequest) {
   const task = await prisma.task.create({
     data: {
       title,
-      notes: body.notes || null,
+      description: body.description || null,
       priority: body.priority ?? "MEDIUM",
+      status: body.status ?? "TODO",
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      tags: Array.isArray(body.tags) ? body.tags : [],
+      categoryId: body.categoryId || null,
     },
+    include: { category: true, comments: true },
   });
 
   return NextResponse.json(task, { status: 201 });
